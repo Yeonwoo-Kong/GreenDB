@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#102c27">
+  <title>GreenDB — 환경 데이터를 일상의 기록으로</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview" aria-label="GreenDB 홈"><span class="brand-mark">G<span>●</span></span><span>GreenDB<small>환경 데이터 워크스페이스</small></span></a>
+      <div class="workspace"><div class="workspace-avatar">G</div><div><strong id="side-company">우리 회사</strong><span>로컬 워크스페이스</span></div><span class="workspace-chevron">⌄</span></div>
+      <div class="nav-caption">WORKSPACE</div>
+      <nav id="nav">
+        <a href="#overview" data-page="overview"><span class="nav-icon">▦</span> 대시보드</a>
+        <a href="#setup" data-page="setup"><span class="nav-icon">◈</span> 시작하기</a>
+        <a href="#upload" data-page="upload"><span class="nav-icon">⇧</span> 자료 업로드</a>
+        <a href="#records" data-page="records"><span class="nav-icon">▤</span> 데이터 기록</a>
+        <a href="#insights" data-page="insights"><span class="nav-icon">◫</span> 현황·활용</a>
+      </nav>
+      <div class="sidebar-bottom"><div class="sidebar-help"><span class="help-icon">✳</span><strong>작게 시작해도 괜찮아요</strong><p>지금 갖고 있는 고지서 한 장부터 환경 데이터를 쌓아보세요.</p></div><div class="local-badge"><span></span> 이 브라우저에 저장 중</div></div>
+    </aside>
+    <main class="main"><header class="topbar"><div id="crumb">워크스페이스 <span>/</span> 대시보드</div><div class="top-actions"><span class="top-date" id="today"></span><button class="icon-button" id="help-button" title="사용 안내">?</button><div class="user-avatar">G</div></div></header><div id="app" class="content"></div></main>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="dialog"><div id="dialog-content"></div></dialog>
+  <script src="/cloud.js" defer></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+data/
+__pycache__/
+server.py
+catalog.py
+static/
+web/
+README.md
+start.bat
+build_vercel.py
+chrome-*/
+vercel-preview.png
+cdp-test.mjs
+close-browser.mjs
