@@ -8,10 +8,10 @@ top = "GreenDB_MVP_Toolkit"
 files = [
     ".gitignore", ".vercelignore", "README.md", "TOOLKIT_GUIDE.md",
     "THIRD_PARTY_NOTICES.md", "start.bat", "server.py", "catalog.py",
-    "build_vercel.py", "build_toolkit.py", "vercel.json",
+    "build_vercel.py", "build_vercel.mjs", "build_toolkit.py", "vercel.json",
 ]
-for folder in ("static", "web", "public"):
-    files.extend(str(path.relative_to(root)) for path in (root / folder).rglob("*") if path.is_file())
+for folder in ("static", "web", "public", "api", "extraction", "tests"):
+    files.extend(str(path.relative_to(root)) for path in (root / folder).rglob("*") if path.is_file() and path.name != "GreenDB_MVP_Toolkit.zip")
 
 with ZipFile(output, "w", ZIP_DEFLATED, compresslevel=9) as archive:
     for relative in sorted(files):

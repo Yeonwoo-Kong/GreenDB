@@ -68,9 +68,10 @@
       for(const row of [...doc.getElementsByTagName('row')].slice(0,2000)){
         const cells=[...row.getElementsByTagName('c')].slice(0,80).map(c=>{
           const value=c.getElementsByTagName('v')[0]?.textContent||c.getElementsByTagName('is')[0]?.textContent||'';
-          return c.getAttribute('t')==='s'?shared[Number(value)]||'':value;
+          const shown=c.getAttribute('t')==='s'?shared[Number(value)]||'':value;
+          return shown?`${c.getAttribute('r')||'?'}=${shown}`:'';
         });
-        if(cells.some(Boolean))output.push(cells.join(' | '));
+        if(cells.some(Boolean))output.push(`[sheet ${name.split('/').at(-1).replace('.xml','')}, row ${row.getAttribute('r')}] ${cells.filter(Boolean).join(' | ')}`);
       }
     }
     return output.join('\n').slice(0,300000);
@@ -89,7 +90,7 @@
         pdfjs.GlobalWorkerOptions.workerSrc='/vendor/pdf.worker.mjs';
         const pdf=await pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
         const lines=[];
-        for(let i=1;i<=Math.min(pdf.numPages,30);i++){const page=await pdf.getPage(i);const content=await page.getTextContent();lines.push(content.items.map(x=>x.str).join(' '))}
+        for(let i=1;i<=Math.min(pdf.numPages,30);i++){const page=await pdf.getPage(i);const content=await page.getTextContent();lines.push(`[page ${i}] ${content.items.map(x=>x.str).join(' ')}`)}
         return [lines.join('\n').slice(0,300000),'PDF 텍스트 추출'];
       }catch{return ['','PDF 텍스트 추출 불가 — 수동 입력']}
     }
@@ -110,6 +111,26 @@
       if(found.length>=80)break;
     }
     return found;
+  }
+  function base64(buffer) {
+    const bytes=new Uint8Array(buffer);let binary='';
+    for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+    return btoa(binary);
+  }
+  async function analyzeWithGemini(file,sourceId,text,data,ref) {
+    const context={analysis_id:id(),source_document:{source_id:sourceId,filename:file.name,media_type:file.type||'application/octet-stream'},analysis_context:{company_name:data.profile.name||null,industry:data.profile.industry||null,management_year:data.profile.year||null},active_metric_candidates:ref.metrics.filter(m=>data.profile.groups.includes(m.group)).map(m=>({id:m.id,group:m.group,name:m.name,unit:m.unit,sourceExample:m.sourceExample})),site_candidates:data.sites.map(s=>({id:s.id,name:s.name,kind:s.kind,scope:s.scope})),expected_schema:'greendb-extraction.schema_v4.json'};
+    const suffix=file.name.split('.').pop().toLowerCase();
+    const payload={context};
+    if(['pdf','png','jpg','jpeg','webp'].includes(suffix)&&file.size<=3*1024*1024){
+      payload.media_type=suffix==='pdf'?'application/pdf':suffix==='png'?'image/png':suffix==='webp'?'image/webp':'image/jpeg';
+      payload.media_data=base64(await file.arrayBuffer());
+    } else if(text.trim()) {
+      payload.document_text=['csv','txt'].includes(suffix)?text.split(/\r?\n/).map((line,index)=>`[line ${index+1}] ${line}`).join('\n').slice(0,300000):text.slice(0,300000);
+    } else throw Error('이 파일은 자동으로 읽을 수 없습니다. 3MB 이하의 PDF·이미지 또는 텍스트가 있는 파일을 사용해 주세요.');
+    const response=await nativeFetch('/api/extract',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const result=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error([result.error,result.detail].filter(Boolean).join(' '));
+    return result;
   }
   function csvExport(data) {
     const fields=['metric_name','group_id','site_name','period_start','period_end','value','unit','source_name','evidence','notes','verified_at'];
@@ -136,7 +157,14 @@
         const sourceId=id();await fileStore(sourceId,file);fileUrls.set(sourceId,URL.createObjectURL(file));
         let text='',methodName='수동 입력';try{[text,methodName]=await extract(file)}catch(e){methodName=`추출 실패 — 수동 입력 (${e.message})`}
         data.sources.unshift({id:sourceId,filename:file.name,type:file.type||'application/octet-stream',uploaded_at:now(),extraction_method:methodName});save(data);
-        return reply({id:sourceId,filename:file.name,method:methodName,candidates:candidates(text,ref.metrics),excerpt:text.slice(0,8000)});
+        try {
+          const result=await analyzeWithGemini(file,sourceId,text,data,ref);
+          data.sources[0].extraction_method=result.method;save(data);
+          return reply({id:sourceId,filename:file.name,method:result.method,analysis:result.analysis,candidates:[],excerpt:text.slice(0,8000)});
+        } catch(error) {
+          data.sources[0].extraction_method='Gemini 분석 실패';save(data);
+          return reply({id:sourceId,filename:file.name,method:'Gemini 분석 실패',analysisError:error.message,candidates:[],excerpt:text.slice(0,8000)});
+        }
       }
       const body=JSON.parse(options.body||'{}');
       if(path==='/api/profile'){

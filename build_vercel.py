@@ -11,7 +11,7 @@ public.mkdir(exist_ok=True)
 shutil.copyfile(root / "static" / "app.css", public / "app.css")
 script = (root / "static" / "app.js").read_text(encoding="utf-8")
 script = script.replace("이미지에서 문자를 자동 읽으려면 이 컴퓨터에 Tesseract OCR이 필요합니다. 설치되지 않은 경우 원본 파일을 보며 직접 입력할 수 있습니다.",
-                        "이미지 자료는 원본 미리보기를 보며 직접 입력할 수 있습니다. 텍스트 PDF는 브라우저에서 값 후보를 추출합니다.")
+                        "Gemini가 파일에서 값·단위·기간·사업장과 근거를 추출합니다. 자료는 분석을 위해 Google Gemini API로 전송되며, 결과는 사용자가 확인한 뒤에만 저장됩니다. 3MB를 초과하는 PDF는 텍스트를 읽을 수 있을 때만 분석됩니다.")
 script = script.replace("이 MVP는 로컬 컴퓨터에서만 실행됩니다. ESG 평가나 법적 공시 수치로 사용하기 전에는 담당자가 정의·단위·경계를 검증해야 합니다.",
                         "배포본의 기업 자료는 현재 브라우저에만 저장됩니다. 다른 기기와 동기화되지 않으니 주기적으로 내보내 백업하세요. ESG 평가나 공시 수치로 사용하기 전에는 담당자가 정의·단위·경계를 검증해야 합니다.")
 (public / "app.js").write_text(script, encoding="utf-8")

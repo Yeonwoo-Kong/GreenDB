@@ -1,0 +1,478 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/greendb-extraction.schema_v4.json",
+  "title": "GreenDB 원천자료 사실 추출 결과",
+  "description": "한 개의 원천자료에서 0개 이상의 독립 환경데이터 후보를 추출한다. 각 후보는 사용자 확인 전 초안이며 최종 GreenDB 기록과 분리된다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "analysis_id",
+    "source_document",
+    "extractions",
+    "warnings"
+  ],
+  "$defs": {
+    "componentStatus": {
+      "enum": [
+        "EXTRACTED",
+        "MISSING",
+        "ILLEGIBLE",
+        "AMBIGUOUS",
+        "CONFIRM_REQUIRED"
+      ]
+    },
+    "extractionStatus": {
+      "enum": [
+        "EXTRACTED",
+        "PARTIAL",
+        "ILLEGIBLE",
+        "AMBIGUOUS",
+        "CONFIRM_REQUIRED",
+        "UNMAPPED"
+      ]
+    },
+    "matchStatus": {
+      "enum": [
+        "MATCHED",
+        "CONFIRM_REQUIRED",
+        "UNMAPPED"
+      ]
+    },
+    "siteMatchStatus": {
+      "enum": [
+        "MATCHED",
+        "CONFIRM_REQUIRED",
+        "UNMAPPED",
+        "MISSING"
+      ]
+    },
+    "valueType": {
+      "enum": [
+        "NUMBER",
+        "TEXT",
+        "BOOLEAN",
+        "DATE",
+        "UNKNOWN"
+      ]
+    },
+    "scopeType": {
+      "enum": [
+        "COMPANY",
+        "SITE",
+        "DEPARTMENT",
+        "PROCESS",
+        "FACILITY",
+        "STACK",
+        "MEASUREMENT_POINT",
+        "UNKNOWN"
+      ]
+    },
+    "evidenceSupport": {
+      "enum": [
+        "METRIC_MATCH",
+        "VALUE",
+        "UNIT",
+        "PERIOD",
+        "SCOPE"
+      ]
+    },
+    "metricMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "match_status",
+        "selected_metric_id",
+        "candidate_metric_ids",
+        "raw_metric_label",
+        "confidence"
+      ],
+      "properties": {
+        "match_status": {
+          "$ref": "#/$defs/matchStatus"
+        },
+        "selected_metric_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "candidate_metric_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "raw_metric_label": {
+          "type": ["string", "null"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "fieldValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "raw_label",
+        "value",
+        "value_type",
+        "unit_status",
+        "raw_unit",
+        "confidence",
+        "evidence_ids"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/componentStatus"
+        },
+        "raw_label": {
+          "type": ["string", "null"]
+        },
+        "value": {
+          "type": ["number", "string", "boolean", "null"]
+        },
+        "value_type": {
+          "$ref": "#/$defs/valueType"
+        },
+        "unit_status": {
+          "$ref": "#/$defs/componentStatus"
+        },
+        "raw_unit": {
+          "type": ["string", "null"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "start_date",
+        "end_date",
+        "year",
+        "month",
+        "raw_text",
+        "confidence",
+        "evidence_ids"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/componentStatus"
+        },
+        "start_date": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "end_date": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "year": {
+          "type": ["integer", "null"],
+          "minimum": 1900,
+          "maximum": 2200
+        },
+        "month": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 12
+        },
+        "raw_text": {
+          "type": ["string", "null"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "scope_type",
+        "raw_scope_name",
+        "site_match_status",
+        "selected_site_id",
+        "candidate_site_ids",
+        "raw_text",
+        "confidence",
+        "evidence_ids"
+      ],
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/componentStatus"
+        },
+        "scope_type": {
+          "$ref": "#/$defs/scopeType"
+        },
+        "raw_scope_name": {
+          "type": ["string", "null"]
+        },
+        "site_match_status": {
+          "$ref": "#/$defs/siteMatchStatus"
+        },
+        "selected_site_id": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "candidate_site_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "raw_text": {
+          "type": ["string", "null"]
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "evidenceLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page",
+        "sheet_name",
+        "cell_range",
+        "line_start",
+        "line_end",
+        "section",
+        "table_name",
+        "row_label",
+        "column_label",
+        "bbox"
+      ],
+      "properties": {
+        "page": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "sheet_name": {
+          "type": ["string", "null"]
+        },
+        "cell_range": {
+          "type": ["string", "null"]
+        },
+        "line_start": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "line_end": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "section": {
+          "type": ["string", "null"]
+        },
+        "table_name": {
+          "type": ["string", "null"]
+        },
+        "row_label": {
+          "type": ["string", "null"]
+        },
+        "column_label": {
+          "type": ["string", "null"]
+        },
+        "bbox": {
+          "type": ["array", "null"],
+          "prefixItems": [
+            {"type": "number"},
+            {"type": "number"},
+            {"type": "number"},
+            {"type": "number"}
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "raw_text",
+        "location",
+        "supports"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "pattern": "^EV_[0-9]{4}$"
+        },
+        "raw_text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "$ref": "#/$defs/evidenceLocation"
+        },
+        "supports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/evidenceSupport"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "extraction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extraction_id",
+        "extraction_status",
+        "metric_match",
+        "field_value",
+        "period",
+        "scope",
+        "evidence",
+        "requires_user_confirmation",
+        "extraction_confidence",
+        "warning_codes"
+      ],
+      "properties": {
+        "extraction_id": {
+          "type": "string",
+          "pattern": "^EXT_[0-9]{4}$"
+        },
+        "extraction_status": {
+          "$ref": "#/$defs/extractionStatus"
+        },
+        "metric_match": {
+          "$ref": "#/$defs/metricMatch"
+        },
+        "field_value": {
+          "$ref": "#/$defs/fieldValue"
+        },
+        "period": {
+          "$ref": "#/$defs/period"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "requires_user_confirmation": {
+          "const": true
+        },
+        "extraction_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "warning_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "LOW_CONFIDENCE",
+              "ILLEGIBLE_TEXT",
+              "MULTIPLE_PERIODS",
+              "MULTIPLE_SCOPES",
+              "TABLE_STRUCTURE_AMBIGUOUS",
+              "VALUE_UNIT_LINK_AMBIGUOUS",
+              "PERIOD_AMBIGUOUS",
+              "SCOPE_AMBIGUOUS",
+              "METRIC_MATCH_AMBIGUOUS",
+              "QUALIFIED_VALUE_PRESERVED_AS_TEXT",
+              "UNIT_MISSING",
+              "PERIOD_MISSING",
+              "SCOPE_MISSING",
+              "CURRENT_MVP_NON_NUMERIC_VALUE"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "2.0"
+    },
+    "analysis_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "filename",
+        "media_type"
+      ],
+      "properties": {
+        "source_id": {
+          "type": ["string", "null"]
+        },
+        "filename": {
+          "type": ["string", "null"]
+        },
+        "media_type": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "extractions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extraction"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

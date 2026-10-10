@@ -13,9 +13,11 @@
 
 ## Vercel에 다시 배포하기
 
-`public/`은 바로 배포할 수 있는 브라우저 저장형 사이트입니다. Vercel CLI로 로그인한 뒤 압축을 푼 폴더에서 `vercel deploy --prod`를 실행하면 됩니다. UI를 수정했다면 먼저 `python build_vercel.py`를 실행해 `public/`을 다시 만드세요.
+`public/`은 브라우저 저장형 사이트입니다. Vercel Production 환경변수 `Gemini_API_Key`에 Gemini API 키를 설정하고, CLI로 로그인한 뒤 압축을 푼 폴더에서 `vercel deploy --prod`를 실행하세요. UI를 수정했다면 먼저 `node build_vercel.mjs`를 실행해 `public/`을 다시 만드세요.
 
 Vercel 배포본은 방문자 각자의 브라우저에 자료를 저장합니다. 로그인, 공유 저장소, 기기 간 동기화는 없습니다. 브라우저 데이터를 지우면 기록도 삭제됩니다. 기록은 CSV/JSON으로 내보낼 수 있지만 업로드 원본은 JSON에 포함되지 않습니다.
+
+AI 분석 시 문서 내용이 Google Gemini API로 전송됩니다. 결과는 첨부된 추출 규칙과 JSON 스키마로 검사하고, 사용자가 확인한 값만 기록에 저장합니다. API 키는 ZIP에 포함되지 않습니다.
 
 ## 폴더 안내
 
@@ -23,7 +25,8 @@ Vercel 배포본은 방문자 각자의 브라우저에 자료를 저장합니�
 |---|---|
 | `server.py`, `catalog.py`, `static/` | 로컬 실행본 |
 | `web/cloud.js`, `web/vendor/` | 브라우저 저장형 배포본의 추가 코드와 PDF.js |
-| `build_vercel.py`, `public/`, `vercel.json` | Vercel 배포 설정과 정적 파일 |
+| `api/`, `extraction/` | Gemini 서버 함수와 추출 규칙 |
+| `build_vercel.mjs`, `public/`, `vercel.json` | Vercel 배포 설정과 정적 파일 |
 | `README.md` | 기능, 범위, 제약 |
 
 계획서에 언급된 별도 119개 변수 DB는 첨부 PDF에 없어서 포함하지 않았습니다. 시작 항목은 37개이며 사용자 정의 항목을 만들 수 있습니다. 자동 추출은 검토용 초안이고 ESG 점수나 공식 공시 수치를 산정하지 않습니다.
