@@ -175,9 +175,30 @@
         if(!body.name?.trim())return error('사업장 이름을 입력해 주세요.');
         const siteId=id();data.sites.push({id:siteId,name:body.name.trim(),kind:body.kind||'사업장',scope:body.scope||'',created_at:now()});save(data);return reply({id:siteId});
       }
+      if(path==='/api/sites/update'){
+        const site=data.sites.find(s=>s.id===body.id);
+        if(!site)return error('수정할 사업장을 찾을 수 없습니다.');
+        const name=String(body.name||'').trim();
+        if(!name)return error('사업장 이름을 입력해 주세요.');
+        site.name=name.slice(0,120);site.kind=String(body.kind||'사업장').trim().slice(0,60);site.scope=String(body.scope||'').trim().slice(0,300);save(data);return reply({ok:true});
+      }
       if(path==='/api/sites/delete'){
         if(data.records.some(r=>r.site_id===body.id))return error('기록이 있는 사업장은 삭제할 수 없습니다.');
         data.sites=data.sites.filter(s=>s.id!==body.id);save(data);return reply({ok:true});
+      }
+      if(path==='/api/records/bulk'){
+        if(!Array.isArray(body.records)||!body.records.length||body.records.length>500)return error('저장할 후보를 확인해 주세요. 한 번에 500건까지 저장할 수 있습니다.');
+        const prepared=[];
+        for(const item of body.records){
+          const metric=ref.metrics.find(m=>m.id===item.metric_id),group=metric?.group||item.group_id,name=metric?.name||item.metric_name?.trim();
+          if(!name||!ref.groups.some(g=>g.id===group))return error('데이터 항목과 영역을 확인해 주세요.');
+          if(!data.sites.some(s=>s.id===item.site_id))return error('사업장을 선택해 주세요.');
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(item.period_start)||!/^\d{4}-\d{2}-\d{2}$/.test(item.period_end)||item.period_start>item.period_end)return error('기간을 확인해 주세요.');
+          if(!Number.isFinite(Number(item.value))||!item.unit?.trim())return error('값과 단위를 확인해 주세요.');
+          if(item.source_id&&!data.sources.some(source=>source.id===item.source_id))return error('증빙 자료를 찾을 수 없습니다.');
+          prepared.push({id:id(),metric_id:item.metric_id,metric_name:name,group_id:group,site_id:item.site_id,period_start:item.period_start,period_end:item.period_end,value:Number(item.value),unit:item.unit,source_id:item.source_id||null,evidence:item.evidence||'',notes:item.notes||'',verified_at:now()});
+        }
+        data.records.unshift(...prepared);save(data);return reply({ids:prepared.map(row=>row.id),count:prepared.length});
       }
       if(path==='/api/records'){
         const metric=ref.metrics.find(m=>m.id===body.metric_id),group=metric?.group||body.group_id,name=metric?.name||body.metric_name?.trim();
@@ -186,6 +207,18 @@
         if(!/^\d{4}-\d{2}-\d{2}$/.test(body.period_start)||!/^\d{4}-\d{2}-\d{2}$/.test(body.period_end)||body.period_start>body.period_end)return error('기간을 확인해 주세요.');
         if(!Number.isFinite(Number(body.value))||!body.unit?.trim())return error('값과 단위를 확인해 주세요.');
         const recordId=id();data.records.unshift({id:recordId,metric_id:body.metric_id,metric_name:name,group_id:group,site_id:body.site_id,period_start:body.period_start,period_end:body.period_end,value:Number(body.value),unit:body.unit,source_id:body.source_id||null,evidence:body.evidence||'',notes:body.notes||'',verified_at:now()});save(data);return reply({id:recordId});
+      }
+      if(path==='/api/records/update'){
+        const index=data.records.findIndex(r=>r.id===body.id);
+        if(index<0)return error('수정할 기록을 찾을 수 없습니다.');
+        const metric=ref.metrics.find(m=>m.id===body.metric_id),group=metric?.group||body.group_id,name=metric?.name||body.metric_name?.trim();
+        if(!name||!ref.groups.some(g=>g.id===group))return error('데이터 항목과 영역을 확인해 주세요.');
+        if(!data.sites.some(s=>s.id===body.site_id))return error('사업장을 선택해 주세요.');
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(body.period_start)||!/^\d{4}-\d{2}-\d{2}$/.test(body.period_end)||body.period_start>body.period_end)return error('기간을 확인해 주세요.');
+        if(!Number.isFinite(Number(body.value))||!body.unit?.trim())return error('값과 단위를 확인해 주세요.');
+        if(body.source_id&&!data.sources.some(source=>source.id===body.source_id))return error('증빙 자료를 찾을 수 없습니다.');
+        data.records[index]={...data.records[index],metric_id:body.metric_id,metric_name:name,group_id:group,site_id:body.site_id,period_start:body.period_start,period_end:body.period_end,value:Number(body.value),unit:body.unit.trim(),source_id:body.source_id||null,evidence:body.evidence||'',notes:body.notes||'',verified_at:now()};
+        save(data);return reply({ok:true});
       }
       if(path==='/api/records/delete'){
         data.records=data.records.filter(r=>r.id!==body.id);save(data);return reply({ok:true});
