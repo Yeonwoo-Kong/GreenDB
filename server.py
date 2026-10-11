@@ -5,11 +5,14 @@ import cgi
 import csv
 import io
 import json
+import os
 import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 import uuid
 import zipfile
 from datetime import datetime
@@ -28,6 +31,25 @@ DB = DATA / "greendb.sqlite3"
 MAX_UPLOAD = 20 * 1024 * 1024
 ALLOWED = {".pdf", ".xlsx", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".webp"}
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+EXTRACTION_SCHEMA = BASE / "extraction" / "greendb-extraction.schema_v4.json"
+EXTRACTION_PROMPT = BASE / "api" / "prompt.json"
+
+
+def load_local_env():
+    env_file = BASE / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name, value = name.strip(), value.strip().strip("\"'")
+        if name and name not in os.environ:
+            os.environ[name] = value
+
+
+load_local_env()
 
 
 def now():
@@ -217,6 +239,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.end_headers()
                 return self.wfile.write(blob)
+            if path in {"/vendor/pdf.mjs", "/vendor/pdf.worker.mjs"}:
+                name = path.rsplit("/", 1)[-1]
+                blob = (BASE / "web" / "vendor" / name).read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Content-Length", str(len(blob)))
+                self.end_headers()
+                return self.wfile.write(blob)
+            if path == "/test-invoice.png":
+                blob = (BASE / "static" / "test-invoice.png").read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(blob)))
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                return self.wfile.write(blob)
             if path == "/api/export.csv":
                 with connect() as db:
                     data = rows(db, """SELECT r.*, s.name AS site_name, d.filename AS source_name
@@ -260,6 +298,64 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlparse(self.path).path
         try:
+            if path == "/api/extract":
+                body = self.json_body()
+                context = body.get("context") or {}
+                source_id = context.get("source_document", {}).get("source_id")
+                if not isinstance(source_id, str) or not context.get("analysis_id"):
+                    return self.error_json("분석 문맥이 올바르지 않습니다.")
+                key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+                if not key:
+                    return self.error_json("로컬 환경변수 GEMINI_API_KEY를 설정해 주세요.", 503)
+                with connect() as db:
+                    source = db.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
+                if not source:
+                    return self.error_json("분석할 자료를 찾을 수 없습니다.", 404)
+                source_path = UPLOADS / source["stored_name"]
+                blob = source_path.read_bytes()
+                parts = [{"text": f"{EXTRACTION_PROMPT.read_text(encoding='utf-8')}\n\n입력 JSON:\n{json.dumps(context, ensure_ascii=False)}\n\n아래 JSON Schema에 정확히 맞는 결과만 출력하세요:\n{EXTRACTION_SCHEMA.read_text(encoding='utf-8')}"}]
+                if source["type"] in {"application/pdf", "image/png", "image/jpeg", "image/webp"} and len(blob) <= 3 * 1024 * 1024:
+                    import base64
+                    parts.append({"inline_data": {"mime_type": source["type"], "data": base64.b64encode(blob).decode("ascii")}})
+                elif source["extracted_text"].strip():
+                    parts.append({"text": "원천자료의 추출 텍스트 (위치 표지를 보존하세요):\n" + source["extracted_text"][:300000]})
+                else:
+                    return self.error_json("이 자료는 Gemini에 전달할 수 있는 텍스트가 없습니다. 3MB 이하 PDF·이미지 또는 텍스트 파일을 사용해 주세요.")
+                model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+                if not re.fullmatch(r"[A-Za-z0-9._-]+", model):
+                    return self.error_json("GEMINI_MODEL 설정을 확인해 주세요.", 500)
+                payload = json.dumps({"contents": [{"role": "user", "parts": parts}], "generationConfig": {"responseMimeType": "application/json", "temperature": 0, "maxOutputTokens": 16384}}).encode("utf-8")
+                request = urllib.request.Request(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", data=payload, headers={"Content-Type": "application/json", "x-goog-api-key": key}, method="POST")
+                try:
+                    with urllib.request.urlopen(request, timeout=55) as response:
+                        generated = json.loads(response.read().decode("utf-8"))
+                except urllib.error.HTTPError as exc:
+                    detail = exc.read().decode("utf-8", errors="replace")[:500]
+                    return self.send_json({"error": "Gemini 분석 요청이 실패했습니다.", "detail": detail}, 502)
+                except TimeoutError:
+                    return self.error_json("Gemini가 55초 안에 응답하지 않았습니다. 요청 크기나 모델 응답 지연을 확인해 주세요.", 504)
+                except urllib.error.URLError as exc:
+                    if isinstance(exc.reason, TimeoutError):
+                        return self.error_json("Gemini가 55초 안에 응답하지 않았습니다. 요청 크기나 모델 응답 지연을 확인해 주세요.", 504)
+                    return self.send_json({"error": "Gemini API에 연결하지 못했습니다.", "detail": str(exc.reason)[:300]}, 502)
+                output = "".join(part.get("text", "") for part in generated.get("candidates", [{}])[0].get("content", {}).get("parts", []))
+                try:
+                    analysis = json.loads(output)
+                except json.JSONDecodeError:
+                    return self.error_json("Gemini 결과를 JSON으로 읽지 못했습니다.", 502)
+                if analysis.get("analysis_id") != context.get("analysis_id") or not isinstance(analysis.get("extractions"), list):
+                    return self.error_json("Gemini 결과 형식이 추출 규칙을 충족하지 못했습니다.", 502)
+                metric_ids = {m.get("id") for m in context.get("active_metric_candidates", [])}
+                site_ids = {s.get("id") for s in context.get("site_candidates", [])}
+                for item in analysis["extractions"]:
+                    match = item.get("metric_match", {})
+                    scope = item.get("scope", {})
+                    if match.get("selected_metric_id") and match["selected_metric_id"] not in metric_ids:
+                        return self.error_json("Gemini 결과에 후보에 없는 데이터 항목이 포함되었습니다.", 502)
+                    if scope.get("selected_site_id") and scope["selected_site_id"] not in site_ids:
+                        return self.error_json("Gemini 결과에 후보에 없는 사업장이 포함되었습니다.", 502)
+                    item["requires_user_confirmation"] = True
+                return self.send_json({"analysis": analysis, "method": f"Gemini {model}"})
             if path == "/api/upload":
                 length = int(self.headers.get("Content-Length", "0"))
                 if length <= 0 or length > MAX_UPLOAD:
@@ -313,6 +409,55 @@ class Handler(BaseHTTPRequestHandler):
                     db.execute("INSERT INTO sites VALUES(?,?,?,?,?)", (site_id, name, str(body.get("kind", "사업장"))[:60],
                                str(body.get("scope", ""))[:300], now()))
                     return self.send_json({"id": site_id})
+                if path == "/api/sites/update":
+                    site_id = str(body.get("id", "")).strip()
+                    name = str(body.get("name", "")).strip()[:120]
+                    if not site_id or not db.execute("SELECT 1 FROM sites WHERE id=?", (site_id,)).fetchone():
+                        raise ValueError("수정할 사업장을 찾을 수 없습니다.")
+                    if not name:
+                        raise ValueError("사업장 이름을 입력해 주세요.")
+                    db.execute("UPDATE sites SET name=?, kind=?, scope=? WHERE id=?",
+                               (name, str(body.get("kind", "사업장")).strip()[:60],
+                                str(body.get("scope", "")).strip()[:300], site_id))
+                    return self.send_json({"ok": True})
+                if path == "/api/records/bulk":
+                    records = body.get("records")
+                    if not isinstance(records, list) or not records or len(records) > 500:
+                        raise ValueError("저장할 후보를 확인해 주세요. 한 번에 500건까지 저장할 수 있습니다.")
+                    group_ids = {g["id"] for g in GROUPS}
+                    prepared = []
+                    for item in records:
+                        if not isinstance(item, dict):
+                            raise ValueError("데이터 후보 형식이 올바르지 않습니다.")
+                        metric_id = str(item.get("metric_id", ""))
+                        metric = next((m for m in METRICS if m["id"] == metric_id), None)
+                        if metric:
+                            metric_name, group_id = metric["name"], metric["group"]
+                        elif metric_id == "custom":
+                            metric_name = str(item.get("metric_name", "")).strip()[:120]
+                            group_id = str(item.get("group_id", ""))
+                        else:
+                            raise ValueError("데이터 항목을 선택해 주세요.")
+                        if not metric_name or group_id not in group_ids:
+                            raise ValueError("데이터 항목과 관리영역을 확인해 주세요.")
+                        site_id = str(item.get("site_id", ""))
+                        if not db.execute("SELECT 1 FROM sites WHERE id=?", (site_id,)).fetchone():
+                            raise ValueError("사업장을 선택해 주세요.")
+                        start, end = str(item.get("period_start", "")), str(item.get("period_end", ""))
+                        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", end) or start > end:
+                            raise ValueError("자료의 시작일과 종료일을 확인해 주세요.")
+                        value = float(item.get("value"))
+                        if not -1e15 < value < 1e15:
+                            raise ValueError("값의 범위를 확인해 주세요.")
+                        unit = str(item.get("unit", "")).strip()[:40]
+                        if not unit:
+                            raise ValueError("단위를 입력해 주세요.")
+                        source_id = item.get("source_id") or None
+                        if source_id and not db.execute("SELECT 1 FROM sources WHERE id=?", (source_id,)).fetchone():
+                            raise ValueError("증빙 자료를 찾을 수 없습니다.")
+                        prepared.append((uuid.uuid4().hex, metric_id, metric_name, group_id, site_id, start, end, value, unit, source_id, str(item.get("evidence", ""))[:1000], str(item.get("notes", ""))[:1000], now()))
+                    db.executemany("INSERT INTO records VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", prepared)
+                    return self.send_json({"ids": [row[0] for row in prepared], "count": len(prepared)})
                 if path == "/api/records":
                     metric_id = str(body.get("metric_id", ""))
                     metric = next((m for m in METRICS if m["id"] == metric_id), None)
@@ -345,6 +490,40 @@ class Handler(BaseHTTPRequestHandler):
                                (record_id, metric_id, metric_name, group_id, site_id, start, end, value, unit,
                                 source_id, str(body.get("evidence", ""))[:1000], str(body.get("notes", ""))[:1000], now()))
                     return self.send_json({"id": record_id})
+                if path == "/api/records/update":
+                    record_id = str(body.get("id", "")).strip()
+                    if not record_id or not db.execute("SELECT 1 FROM records WHERE id=?", (record_id,)).fetchone():
+                        raise ValueError("수정할 기록을 찾을 수 없습니다.")
+                    metric_id = str(body.get("metric_id", ""))
+                    metric = next((m for m in METRICS if m["id"] == metric_id), None)
+                    if metric:
+                        metric_name, group_id = metric["name"], metric["group"]
+                    elif metric_id == "custom":
+                        metric_name = str(body.get("metric_name", "")).strip()[:120]
+                        group_id = str(body.get("group_id", ""))
+                    else:
+                        raise ValueError("데이터 항목을 선택해 주세요.")
+                    if not metric_name or group_id not in {g["id"] for g in GROUPS}:
+                        raise ValueError("데이터 항목과 관리영역을 확인해 주세요.")
+                    site_id = str(body.get("site_id", ""))
+                    if not db.execute("SELECT 1 FROM sites WHERE id=?", (site_id,)).fetchone():
+                        raise ValueError("사업장을 선택해 주세요.")
+                    start, end = str(body.get("period_start", "")), str(body.get("period_end", ""))
+                    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", start) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", end) or start > end:
+                        raise ValueError("자료의 시작일과 종료일을 확인해 주세요.")
+                    value = float(body.get("value"))
+                    if not -1e15 < value < 1e15:
+                        raise ValueError("값의 범위를 확인해 주세요.")
+                    unit = str(body.get("unit", "")).strip()[:40]
+                    if not unit:
+                        raise ValueError("단위를 입력해 주세요.")
+                    source_id = body.get("source_id") or None
+                    if source_id and not db.execute("SELECT 1 FROM sources WHERE id=?", (source_id,)).fetchone():
+                        raise ValueError("증빙 자료를 찾을 수 없습니다.")
+                    db.execute("UPDATE records SET metric_id=?, metric_name=?, group_id=?, site_id=?, period_start=?, period_end=?, value=?, unit=?, source_id=?, evidence=?, notes=?, verified_at=? WHERE id=?",
+                               (metric_id, metric_name, group_id, site_id, start, end, value, unit, source_id,
+                                str(body.get("evidence", ""))[:1000], str(body.get("notes", ""))[:1000], now(), record_id))
+                    return self.send_json({"ok": True})
                 if path == "/api/records/delete":
                     db.execute("DELETE FROM records WHERE id=?", (str(body.get("id", "")),))
                     return self.send_json({"ok": True})

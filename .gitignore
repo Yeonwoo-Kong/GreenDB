@@ -1,5 +1,8 @@
 data/
 __pycache__/
 .vercel/
+.env
+.env.*
+!.env.example
 
 .vercel

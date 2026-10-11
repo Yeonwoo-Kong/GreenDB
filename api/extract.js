@@ -61,6 +61,7 @@ module.exports = async function handler(req, res) {
     if (errors.length) return res.status(502).json({error:'Gemini 결과가 첨부된 추출 규칙을 충족하지 못했습니다. 다시 시도해 주세요.',detail:errors.slice(0,8).join('; ')});
     return res.status(200).json({analysis,method:`Gemini ${model}`});
   } catch (error) {
-    return res.status(500).json({error:error.name === 'AbortError' ? 'Gemini 응답 시간이 초과되었습니다.' : '분석 요청을 처리하지 못했습니다.'});
+    const timedOut = error.name === 'AbortError';
+    return res.status(timedOut ? 504 : 500).json({error:timedOut ? 'Gemini가 55초 안에 응답하지 않았습니다. 요청 크기나 모델 응답 지연을 확인해 주세요.' : '분석 요청을 처리하지 못했습니다.'});
   }
 };
